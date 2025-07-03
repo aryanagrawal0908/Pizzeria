@@ -115,20 +115,3 @@ This simulation demonstrates:
 4. **Deadlock prevention**: Proper lock ordering and timeout mechanisms
 5. **Performance monitoring**: Real-time statistics in multi-threaded environment
 
-## 🔧 Customization
-
-You can modify the simulation by:
-
-- Adjusting timing parameters (cooking time, order intervals)
-- Adding new pizza types and ingredients
-- Implementing priority ordering systems
-- Adding more complex chef specializations
-- Extending statistics and reporting features
-
-## 📝 Technical Notes
-
-- Uses C++20 features including `std::counting_semaphore`
-- Implements RAII for automatic resource management
-- Thread-safe singleton pattern for global pizzeria access
-- Proper exception handling for robustness
-- Clean shutdown procedures for all threads
