@@ -42,7 +42,55 @@ IngredientType Ingredient::getType() const {
 // Order implementation
 Order::Order(int cust_id, PizzaType type) 
     : order_id(order_counter++), customer_id(cust_id), pizza_type(type), 
-      status(OrderStatus::PENDING), order_time(chrono::steady_clock::now()) {}
+      status(OrderStatus::PENDING), order_time(chrono::steady_clock::now()),
+      price(0.0), is_paid(false), is_refunded(false) {
+    
+    // Set price based on pizza type
+    switch (type) {
+        case PizzaType::MARGHERITA:
+            price = 12.99;
+            break;
+        case PizzaType::PEPPERONI:
+            price = 15.99;
+            break;
+        case PizzaType::MUSHROOM:
+            price = 14.99;
+            break;
+        case PizzaType::VEGGIE:
+            price = 16.99;
+            break;
+        case PizzaType::SUPREME:
+            price = 19.99;
+            break;
+        default:
+            price = 12.99;
+            break;
+    }
+}
+
+double Order::getPrice() const {
+    return price;
+}
+
+void Order::setPaid(bool paid) {
+    lock_guard<mutex> lock(order_mutex);
+    is_paid = paid;
+}
+
+bool Order::isPaid() const {
+    lock_guard<mutex> lock(order_mutex);
+    return is_paid;
+}
+
+void Order::setRefunded(bool refunded) {
+    lock_guard<mutex> lock(order_mutex);
+    is_refunded = refunded;
+}
+
+bool Order::isRefunded() const {
+    lock_guard<mutex> lock(order_mutex);
+    return is_refunded;
+}
 
 int Order::getOrderId() const {
     return order_id;
@@ -183,12 +231,14 @@ void Customer::startOrdering() {
     customer_thread = thread(&Customer::placeOrders, this);
 }
 
+// Replace the Customer::placeOrders method:
+
 void Customer::placeOrders() {
     random_device rd;
     mt19937 gen(rd());
-    uniform_int_distribution<> pizza_choice(0, 4); // 5 pizza types
-    uniform_int_distribution<> order_interval(2000, 10000); // 2-10 seconds
-    uniform_int_distribution<> orders_per_customer(1, 3); // 1-3 orders per customer
+    uniform_int_distribution<> pizza_choice(0, 4);
+    uniform_int_distribution<> order_interval(2000, 8000);
+    uniform_int_distribution<> orders_per_customer(1, 3);
     
     int num_orders = orders_per_customer(gen);
     
@@ -196,10 +246,15 @@ void Customer::placeOrders() {
         PizzaType pizza_type = static_cast<PizzaType>(pizza_choice(gen));
         auto order = make_shared<Order>(customer_id, pizza_type);
         
+        // Customer pays for the order
+        double price = order->getPrice();
+        order->setPaid(true);
+        
         g_pizzeria->addOrder(order);
-        g_pizzeria->printOrderStatus("Customer " + to_string(customer_id) + 
+        g_pizzeria->printOrderStatus("PAYMENT: Customer " + to_string(customer_id) + 
             " (" + name + ") placed Order #" + to_string(order->getOrderId()) + 
-            " for " + order->getPizzaName());
+            " for " + order->getPizzaName() + " ($" + 
+            to_string(price).substr(0, to_string(price).find('.') + 3) + ") - PAID");
         
         if (i < num_orders - 1) {
             this_thread::sleep_for(chrono::milliseconds(order_interval(gen)));
@@ -328,7 +383,8 @@ void Pizzeria::restockIngredients() {
 }
 
 void Pizzeria::startOperations() {
-    printOrderStatus("🍕 Welcome to Concurrent Pizzeria! 🍕");
+    printOrderStatus("*** Welcome to Concurrent Pizzeria! ***");
+    printOrderStatus("PIZZA PRICES: Margherita $12.99 | Pepperoni $15.99 | Mushroom $14.99 | Veggie $16.99 | Supreme $19.99");
     printOrderStatus("Opening for business...");
     
     // Start chefs
@@ -341,25 +397,21 @@ void Pizzeria::startOperations() {
         customer->startOrdering();
     }
     
-    // Start delivery service
+    // Start service threads
     thread delivery_thread(&Pizzeria::deliveryService, this);
-    
-    // Start ingredient manager
     thread ingredient_thread(&Pizzeria::ingredientManager, this);
-    
-    // Start statistics reporter
     thread stats_thread(&Pizzeria::statisticsReporter, this);
     
-    // Run for a specified time
-    this_thread::sleep_for(chrono::seconds(30));
+    // Run for reduced time: 25 seconds instead of 30
+    this_thread::sleep_for(chrono::seconds(25));
     
     // Stop accepting new orders
     accepting_orders = false;
-    printOrderStatus("⚠️  Pizzeria is now closed for new orders. Finishing existing orders...");
+    printOrderStatus("WARNING: Pizzeria closed for new orders. Processing remaining orders...");
     
-    // Wait longer and check for remaining orders
+    // Reduced waiting time: 35 seconds instead of 65 (total: 60s instead of 90s)
     int wait_cycles = 0;
-    const int max_wait_cycles = 90; // 30 seconds max additional wait
+    const int max_wait_cycles = 50; // Changed from 65 to 35 seconds
     
     while (wait_cycles < max_wait_cycles) {
         this_thread::sleep_for(chrono::seconds(1));
@@ -374,14 +426,13 @@ void Pizzeria::startOperations() {
         }
         
         if (!orders_remaining && total_orders_placed == total_orders_delivered) {
-            printOrderStatus("✅ All orders have been completed and delivered!");
+            printOrderStatus("SUCCESS: All orders completed and delivered!");
             break;
         }
         
-        // Print progress every 5 seconds
+        // Progress updates
         if (wait_cycles % 5 == 0) {
-            printOrderStatus("⏳ Still processing remaining orders... " + 
-                           to_string(total_orders_delivered) + "/" + 
+            printOrderStatus("PROCESSING: " + to_string(total_orders_delivered) + "/" + 
                            to_string(total_orders_placed) + " delivered");
         }
 
@@ -389,28 +440,29 @@ void Pizzeria::startOperations() {
             order_available.notify_all();
             ready_order_available.notify_all();
         }
-        
     }
     
     if (wait_cycles >= max_wait_cycles) {
-        printOrderStatus("⚠️  Timeout reached. Some orders may remain unprocessed.");
+        printOrderStatus("TIMEOUT: 75-second time limit reached!");
     }
+    
+    // Process refunds for undelivered orders
+    processRefunds();
     
     // Close pizzeria
     is_open = false;
     order_available.notify_all();
     ready_order_available.notify_all();
     
-    // Wait for threads to finish
+    // Wait for threads
     if (delivery_thread.joinable()) delivery_thread.join();
     if (ingredient_thread.joinable()) ingredient_thread.join();
     if (stats_thread.joinable()) stats_thread.join();
     
-    printOrderStatus("🏁 Pizzeria has closed. Final statistics:");
+    printOrderStatus("FINAL: Pizzeria closed. Final reports:");
     printStatistics();
-    
-    // Print detailed completion analysis
     printCompletionAnalysis();
+    printEarningsReport();
 }
 
 void Pizzeria::stopOperations() {
@@ -432,27 +484,31 @@ void Pizzeria::printOrderStatus(const string& message) {
     cout << message << endl;
 }
 
+// Replace the printStatistics method:
+
 void Pizzeria::printStatistics() {
     lock_guard<mutex> lock(cout_mutex);
     cout << "\n" << string(50, '=') << endl;
-    cout << "📊 PIZZERIA STATISTICS 📊" << endl;
+    cout << "PIZZERIA STATISTICS" << endl;
     cout << string(50, '=') << endl;
     cout << "Total Orders Placed: " << total_orders_placed << endl;
     cout << "Total Orders Completed: " << total_orders_completed << endl;
     cout << "Total Orders Delivered: " << total_orders_delivered << endl;
     cout << "Orders in Queue: " << order_queue.size() << endl;
     cout << "Ready Orders: " << ready_orders.size() << endl;
-    cout << "\n📦 INGREDIENT LEVELS:" << endl;
+    cout << "\nINGREDIENT LEVELS:" << endl;
     for (const auto& ingredient : ingredients) {
         cout << "  " << ingredient->getName() << ": " << ingredient->getQuantity() << endl;
     }
     cout << string(50, '=') << endl;
 }
 
+// Replace the printCompletionAnalysis method:
+
 void Pizzeria::printCompletionAnalysis() {
     lock_guard<mutex> lock(cout_mutex);
     cout << "\n" << string(50, '=') << endl;
-    cout << "📋 COMPLETION ANALYSIS" << endl;
+    cout << "COMPLETION ANALYSIS" << endl;
     cout << string(50, '=') << endl;
     
     int unprocessed_orders = total_orders_placed - total_orders_delivered;
@@ -468,42 +524,119 @@ void Pizzeria::printCompletionAnalysis() {
         lock_guard<mutex> ready_lock(ready_orders_mutex);
         
         if (!order_queue.empty()) {
-            cout << "⚠️  Orders still in queue: " << order_queue.size() << endl;
+            cout << "WARNING: Orders still in queue: " << order_queue.size() << endl;
         }
         
         if (!ready_orders.empty()) {
-            cout << "⚠️  Orders ready but not delivered: " << ready_orders.size() << endl;
+            cout << "WARNING: Orders ready but not delivered: " << ready_orders.size() << endl;
         }
     }
     
     if (completion_rate == 100.0) {
-        cout << "🎉 Perfect! All orders were successfully completed!" << endl;
+        cout << "PERFECT! All orders were successfully completed!" << endl;
     } else if (completion_rate >= 90.0) {
-        cout << "👍 Good job! Most orders were completed." << endl;
+        cout << "GOOD: Most orders were completed." << endl;  // Fixed: Removed Unicode thumbs up
     } else {
-        cout << "📝 Consider increasing processing time or chef count for better completion rates." << endl;
+        cout << "SUGGESTION: Consider increasing processing time or chef count for better completion rates." << endl;  // Fixed: Removed Unicode notebook
     }
     
     cout << string(50, '=') << endl;
 }
 
-bool Pizzeria::isOpen() const {
-    return is_open;
+double Pizzeria::calculateRefund(double original_price) {
+    return original_price * 1.10; // 110% refund (original + 10% apology)
 }
 
-bool Pizzeria::isAcceptingOrders() const {
-    return accepting_orders;
+// Replace the processRefunds method:
+
+void Pizzeria::processRefunds() {
+    vector<shared_ptr<Order>> undelivered_orders;
+    
+    // Collect undelivered orders from queue
+    {
+        lock_guard<mutex> order_lock(order_queue_mutex);
+        while (!order_queue.empty()) {
+            undelivered_orders.push_back(order_queue.front());
+            order_queue.pop();
+        }
+    }
+    
+    // Collect undelivered ready orders
+    {
+        lock_guard<mutex> ready_lock(ready_orders_mutex);
+        while (!ready_orders.empty()) {
+            undelivered_orders.push_back(ready_orders.front());
+            ready_orders.pop();
+        }
+    }
+    
+    // Process refunds
+    if (!undelivered_orders.empty()) {
+        printOrderStatus("REFUNDS: Processing refunds with 10% apology bonus...");
+        
+        for (auto& order : undelivered_orders) {
+            if (order->isPaid() && !order->isRefunded()) {
+                double refund_amount = calculateRefund(order->getPrice());
+                total_refunds.store(total_refunds.load() + refund_amount);
+                order->setRefunded(true);
+                
+                printOrderStatus("REFUND: Issued to Customer " + 
+                    to_string(order->getCustomerId()) + " for Order #" + 
+                    to_string(order->getOrderId()) + ": $" + 
+                    to_string(refund_amount).substr(0, to_string(refund_amount).find('.') + 3) + 
+                    " (Original: $" + to_string(order->getPrice()).substr(0, to_string(order->getPrice()).find('.') + 3) + 
+                    " + 10% apology)");
+            }
+        }
+    }
 }
+
+void Pizzeria::printEarningsReport() {
+    lock_guard<mutex> lock(cout_mutex);
+    cout << "\n" << string(60, '=') << endl;
+    cout << "FINAL EARNINGS REPORT" << endl;  // Fixed: Removed Unicode money symbol
+    cout << string(60, '=') << endl;
+    
+    double gross_earnings = total_earnings.load();
+    double total_refunds_paid = total_refunds.load();
+    double net_earnings = gross_earnings - total_refunds_paid;
+    
+    cout << "Gross Earnings (Delivered Orders): $" << fixed << setprecision(2) << gross_earnings << endl;
+    cout << "Total Refunds Paid (with 10% apology): $" << fixed << setprecision(2) << total_refunds_paid << endl;
+    cout << "Net Earnings: $" << fixed << setprecision(2) << net_earnings << endl;
+    
+    cout << "\nBREAKDOWN:" << endl;  // Fixed: Removed Unicode chart symbol
+    cout << "  Orders Delivered: " << total_orders_delivered << endl;
+    cout << "  Orders Refunded: " << (total_orders_placed - total_orders_delivered) << endl;
+    cout << "  Average Order Value: $" << fixed << setprecision(2) 
+         << (total_orders_delivered > 0 ? gross_earnings / total_orders_delivered : 0.0) << endl;
+    
+    if (net_earnings > 0) {
+        cout << "\nSUCCESS: Profitable day! Net profit: $" << fixed << setprecision(2) << net_earnings << endl;  // Fixed: Removed Unicode party symbol
+    } else if (net_earnings < 0) {
+        cout << "\nLOSS: Loss incurred due to refunds: $" << fixed << setprecision(2) << abs(net_earnings) << endl;  // Fixed: Removed Unicode sad face
+    } else {
+        cout << "\nBREAK-EVEN: Break-even day!" << endl;  // Fixed: Removed Unicode neutral face
+    }
+    
+    cout << string(60, '=') << endl;
+}
+
+// Replace the deliveryService method:
 
 void Pizzeria::deliveryService() {
     random_device rd;
     mt19937 gen(rd());
-    uniform_int_distribution<> delivery_time(1000, 3000);  
+    uniform_int_distribution<> delivery_time(800, 2500);
     
     while (is_open || !ready_orders.empty()) {
         auto order = getReadyOrder();
         if (!order) {
-            this_thread::sleep_for(chrono::milliseconds(100));
+            if (!is_open) {
+                lock_guard<mutex> lock(ready_orders_mutex);
+                if (ready_orders.empty()) break;
+            }
+            this_thread::sleep_for(chrono::milliseconds(50));
             continue;
         }
         
@@ -514,36 +647,15 @@ void Pizzeria::deliveryService() {
         order->markCompleted();
         total_orders_delivered++;
         
-        printOrderStatus("🚚 Order #" + to_string(order->getOrderId()) + 
+        // Add to earnings when delivered
+        if (order->isPaid()) {
+            total_earnings.store(total_earnings.load() + order->getPrice());
+        }
+        
+        printOrderStatus("DELIVERY: Order #" + to_string(order->getOrderId()) + 
             " delivered to Customer " + to_string(order->getCustomerId()) + 
-            " (Processing time: " + to_string(order->getProcessingTime()) + "s)");
-    }
-}
-
-void Pizzeria::ingredientManager() {
-    while (is_open) {
-        this_thread::sleep_for(chrono::seconds(8));
-        
-        // Check if any ingredient is running low
-        bool need_restock = false;
-        for (const auto& ingredient : ingredients) {
-            if (ingredient->getQuantity() < 10) {
-                need_restock = true;
-                break;
-            }
-        }
-        
-        if (need_restock) {
-            restockIngredients();
-            printOrderStatus("📦 Ingredients restocked!");
-        }
-    }
-}
-
-void Pizzeria::statisticsReporter() {
-    while (is_open) {
-        this_thread::sleep_for(chrono::seconds(10));
-        printStatistics();
+            " ($" + to_string(order->getPrice()).substr(0, to_string(order->getPrice()).find('.') + 3) + 
+            ") - Processing time: " + to_string(order->getProcessingTime()) + "s");
     }
 }
 
@@ -616,4 +728,45 @@ vector<IngredientType> getRequiredIngredients(PizzaType pizza_type) {
     }
     
     return ingredients;
+}
+
+bool Pizzeria::isOpen() const {
+    return is_open.load();
+}
+
+bool Pizzeria::isAcceptingOrders() const {
+    return accepting_orders.load();
+}
+
+void Pizzeria::ingredientManager() {
+    uniform_int_distribution<> restock_amount(5, 20);
+    
+    while (is_open) {
+        this_thread::sleep_for(chrono::seconds(8)); // Check every 8 seconds
+        
+        // Check if any ingredient is running low
+        bool need_restock = false;
+        for (const auto& ingredient : ingredients) {
+            if (ingredient->getQuantity() < 10) { // Restock when below 10 units
+                need_restock = true;
+                break;
+            }
+        }
+        
+        if (need_restock) {
+            for (auto& ingredient : ingredients) {
+                ingredient->restock(restock_amount(gen));
+            }
+            printOrderStatus("RESTOCK: Ingredients restocked!"); // Fixed: Removed Unicode box symbol
+        }
+    }
+}
+
+void Pizzeria::statisticsReporter() {
+    while (is_open) {
+        this_thread::sleep_for(chrono::seconds(15)); // Report every 15 seconds
+        if (is_open) {
+            printStatistics();
+        }
+    }
 }

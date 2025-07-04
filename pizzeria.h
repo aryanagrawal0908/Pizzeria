@@ -59,16 +59,22 @@ public:
 // Order class
 class Order {
 private:
-    static atomic<int> order_counter;
-    int order_id;
-    int customer_id;
-    PizzaType pizza_type;
+    const int order_id;
+    const int customer_id;
+    const PizzaType pizza_type;
     OrderStatus status;
     chrono::steady_clock::time_point order_time;
     chrono::steady_clock::time_point completion_time;
     mutable mutex order_mutex;
 
+    // Add these pricing-related members:
+    double price;
+    bool is_paid;
+    bool is_refunded;
+
 public:
+    static atomic<int> order_counter;
+
     Order(int cust_id, PizzaType type);
     int getOrderId() const;
     int getCustomerId() const;
@@ -78,6 +84,13 @@ public:
     string getPizzaName() const;
     double getProcessingTime() const;
     void markCompleted();
+
+    // Add these pricing-related method declarations:
+    double getPrice() const;
+    void setPaid(bool paid);
+    bool isPaid() const;
+    void setRefunded(bool refunded);
+    bool isRefunded() const;
 };
 
 // Chef class
@@ -139,6 +152,11 @@ private:
     atomic<int> total_orders_placed{0};
     atomic<int> total_orders_completed{0};
     atomic<int> total_orders_delivered{0};
+
+    // New statistics members
+    atomic<double> total_earnings{0.0};
+    atomic<double> total_refunds{0.0};
+    map<PizzaType, double> pizza_prices;
     
     // Control flags
     atomic<bool> is_open{true};
@@ -173,6 +191,12 @@ public:
     void printStatistics();
     bool isOpen() const;
     bool isAcceptingOrders() const;
+
+    // New utility methods
+    void initializePrices();
+    double calculateRefund(double original_price);
+    void processRefunds();
+    void printEarningsReport();
     
     // Delivery thread
     void deliveryService();

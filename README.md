@@ -5,113 +5,133 @@ A comprehensive C++ simulation that demonstrates advanced concurrency concepts i
 ## 🎯 Project Overview
 
 This project simulates a busy pizzeria with multiple chefs, customers, orders, and ingredients. It showcases various concurrency mechanisms working together to create a realistic multi-threaded application.
+# 🍕 Concurrent Pizzeria Simulation
 
-## 🔧 Concurrency Concepts Demonstrated
+A multi-threaded C++ simulation of a pizzeria with real-time order processing, ingredient management, and financial tracking.
 
-### 1. **Multi-threading**
-- **Chef threads**: Each chef works independently, taking orders from a shared queue
-- **Customer threads**: Customers place orders concurrently 
-- **Delivery service thread**: Handles order delivery in the background
-- **Ingredient manager thread**: Monitors and restocks ingredients
-- **Statistics reporter thread**: Periodically reports system status
 
-### 2. **Mutex Locks**
-- **Order queue mutex**: Protects the shared order queue from race conditions
-- **Ready orders mutex**: Ensures thread-safe access to completed orders
-- **Console output mutex**: Prevents interleaved console output
-- **Order status mutex**: Protects individual order status updates
-- **Ingredient mutex**: Ensures thread-safe ingredient consumption and restocking
-
-### 3. **Semaphores**
-- **Chef semaphore**: Limits the number of concurrent chefs (resource management)
-- **Ingredient semaphore**: Controls access to ingredient inventory
-
-### 4. **Condition Variables**
-- **Order available**: Signals chefs when new orders arrive
-- **Ready order available**: Notifies delivery service when orders are ready
-
-### 5. **Atomic Operations**
-- **Order counters**: Thread-safe counting of placed, completed, and delivered orders
-- **Control flags**: Safe management of pizzeria open/closed state
-
-## 🏗️ Architecture
-
-### Core Classes
-
-1. **Pizzeria** - Main orchestrator class that manages all operations
-2. **Chef** - Represents individual chefs who prepare orders
-3. **Customer** - Represents customers who place orders
-4. **Order** - Represents individual pizza orders with status tracking
-5. **Ingredient** - Manages ingredient inventory with thread-safe operations
-
-### Key Features
-
-- **Dynamic ingredient management**: Ingredients are consumed during cooking and restocked automatically
-- **Realistic timing**: Random delays simulate real-world preparation and cooking times
-- **Order tracking**: Complete order lifecycle from placement to delivery
-- **Statistics reporting**: Real-time monitoring of pizzeria performance
-- **Graceful shutdown**: Proper cleanup when pizzeria closes
-
-## 🔄 Process Flow
-
-1. **Initialization**: Pizzeria starts with specified number of chefs and customers
-2. **Order placement**: Customers place orders concurrently at random intervals
-3. **Order processing**: Chefs take orders from queue and check ingredient availability
-4. **Preparation**: Chefs prepare orders (ingredient consumption, cooking simulation)
-5. **Completion**: Finished orders are moved to ready queue
-6. **Delivery**: Delivery service picks up ready orders and delivers them
-7. **Monitoring**: Background threads monitor ingredients and report statistics
-
-## 🚀 Compilation and Execution
-
-### Requirements
-- C++20 compatible compiler (GCC 10+, Clang 12+, MSVC 2019+)
-- Standard library with semaphore support
-
-### Windows (MSVC)
-```bash
-cl /EHsc /std:c++20 main.cpp pizzeria.cpp -o pizzeria.exe
+### Pizza Menu & Pricing
+```cpp
+PizzaType::MARGHERITA  - $12.99
+PizzaType::PEPPERONI   - $15.99
+PizzaType::MUSHROOM    - $14.99
+PizzaType::VEGGIE      - $16.99
+PizzaType::SUPREME     - $19.99
 ```
 
-### Linux/macOS (GCC)
-```bash
-g++ -std=c++20 -pthread main.cpp pizzeria.cpp -o pizzeria
+### Timing Configuration
+```cpp
+Active Operations:     25 seconds   // New orders accepted
+Shutdown Processing:   50 seconds   // Complete existing orders
+Total Runtime:         75 seconds   // Maximum total time
 ```
 
-### Run the simulation
+### Default Setup
+- **Chefs**: 3 (Mario, Luigi, Giuseppe)
+- **Customers**: 5 (Alice, Bob, Charlie, Diana, Eve)
+- **Initial Ingredients**: Limited quantities to simulate real-world constraints
+
+## 💳 Financial System
+
+### Payment Flow
+1. **Order Placement**: Customer pays immediately upon ordering
+2. **Order Processing**: Chefs prepare and cook pizzas
+3. **Delivery**: Payment confirmed when order is delivered
+4. **Refunds**: Undelivered orders receive 110% refund
+
+### Earnings Calculation
+```cpp
+Gross Earnings = Sum of all delivered orders
+Total Refunds = Sum of (undelivered orders × 1.10)
+Net Earnings = Gross Earnings - Total Refunds
+```
+
+## 🧵 Threading Model
+
+### Thread Types
+1. **Customer Threads** (5-default): Place orders independently
+2. **Chef Threads** (3-default): Process orders from queue
+3. **Delivery Thread** (1): Delivers completed orders
+4. **Ingredient Manager** (1): Monitors and restocks ingredients
+5. **Statistics Reporter** (1): Periodic status updates
+
+### Synchronization Mechanisms
+- **Mutexes**: Protect shared data structures
+- **Condition Variables**: Thread communication for order availability
+- **Atomic Variables**: Thread-safe counters for statistics
+- **Semaphores**: Resource management for chefs and ingredients
+
+### Deadlock Prevention
+- **Consistent Lock Ordering**: Prevents circular dependencies
+- **Timeout Mechanisms**: Prevents infinite waiting
+- **Periodic Notifications**: Ensures thread responsiveness
+
+## 📈 Performance Metrics
+
+### Key Metrics Tracked
+- **Order Statistics**: Placed, completed, delivered counts
+- **Completion Rate**: Percentage of successfully delivered orders
+- **Processing Time**: Average time from order to delivery
+- **Financial Performance**: Revenue, refunds, net profit
+- **Resource Utilization**: Ingredient consumption and restocking
+ 
+
+### Manual Compilation
 ```bash
+# GCC/Clang
+g++ -std=c++20 -pthread -Wall -Wextra -O2 main.cpp pizzeria.cpp -o pizzeria
+
+# Run
 ./pizzeria
+```
+
+### Windows (MinGW)
+```bash
+g++ -std=c++20 -pthread main.cpp pizzeria.cpp -o pizzeria.exe
+pizzeria.exe
 ```
 
 ## 📊 Sample Output
 
 ```
-🍕 Concurrent Pizzeria Simulation 🍕
-=====================================
-Enter number of chefs (1-6, default 3): 3
-Enter number of customers (1-10, default 5): 5
+🍕 Welcome to Concurrent Pizzeria! 🍕
+💰 PIZZA PRICES: Margherita $12.99 | Pepperoni $15.99 | Mushroom $14.99 | Veggie $16.99 | Supreme $19.99
 
-🚀 Starting pizzeria with 3 chefs and 5 customers...
+[14:30:15.123] 💰 Customer 1 (Alice) placed Order #1 for Margherita ($12.99) - PAID
+[14:30:16.456] Chef 1 (Mario) started preparing Order #1 (Margherita)
+[14:30:22.789] 🚚 Order #1 delivered to Customer 1 ($12.99) - Processing time: 7.6s
 
-[10:30:15.123] 🍕 Welcome to Concurrent Pizzeria! 🍕
-[10:30:15.124] Opening for business...
-[10:30:16.234] Customer 1 (Alice) placed Order #1 for Margherita
-[10:30:16.445] Chef 1 (Mario) started preparing Order #1 (Margherita)
-[10:30:17.123] Customer 2 (Bob) placed Order #2 for Pepperoni
-[10:30:18.567] Chef 1 (Mario) is cooking Order #1 (Margherita)
-[10:30:19.234] Chef 2 (Luigi) started preparing Order #2 (Pepperoni)
-[10:30:22.789] Chef 1 (Mario) completed Order #1 (Margherita)
-[10:30:23.456] 🚚 Order #1 delivered to Customer 1 (Processing time: 7.3s)
-...
+==================================================
+📋 COMPLETION ANALYSIS
+==================================================
+Orders Placed: 15
+Orders Delivered: 14
+Unprocessed Orders: 1
+Completion Rate: 93.3%
+👍 Good job! Most orders were completed.
+
+💰 FINAL EARNINGS REPORT 💰
+============================================================
+Gross Earnings (Delivered Orders): $198.86
+Total Refunds Paid (with 10% apology): $17.59
+Net Earnings: $181.27
+
+🎉 Profitable day! Net profit: $181.27
+============================================================
 ```
 
-## 🎓 Learning Outcomes
+### Adding New Pizza Types
+1. Add to `PizzaType` enum in `pizzeria.h`
+2. Update pricing in `Order` constructor
+3. Define ingredients in `getRequiredIngredients()`
+4. Update string conversion functions
 
-This simulation demonstrates:
+### Common Issues
+- **Low Completion Rates**: Increase initial ingredient quantities
+- **Compilation Errors**: Ensure C++20 support and threading library
+- **Deadlocks**: Check for proper mutex usage and timeout mechanisms
 
-1. **Thread synchronization**: How multiple threads can work together safely
-2. **Resource management**: Using semaphores to limit concurrent access
-3. **Producer-consumer pattern**: Order queue management between customers and chefs
-4. **Deadlock prevention**: Proper lock ordering and timeout mechanisms
-5. **Performance monitoring**: Real-time statistics in multi-threaded environment
-
+### Performance Tuning
+- **Increase Ingredients**: For higher completion rates
+- **Adjust Timing**: Modify cooking/delivery times for different scenarios
+- **Scale Threads**: Add more chefs for higher throughput
