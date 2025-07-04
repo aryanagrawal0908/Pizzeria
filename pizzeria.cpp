@@ -221,27 +221,28 @@ Pizzeria::Pizzeria(int num_chefs, int num_customers)
       gen(rd()), pizza_dist(0, 4), timing_dist(1000, 5000) {
     
     // Initialize ingredients
-    ingredients.push_back(make_unique<Ingredient>(IngredientType::DOUGH, "Dough", 50));
-    ingredients.push_back(make_unique<Ingredient>(IngredientType::CHEESE, "Cheese", 100));
-    ingredients.push_back(make_unique<Ingredient>(IngredientType::TOMATO_SAUCE, "Tomato Sauce", 80));
-    ingredients.push_back(make_unique<Ingredient>(IngredientType::PEPPERONI, "Pepperoni", 60));
-    ingredients.push_back(make_unique<Ingredient>(IngredientType::MUSHROOMS, "Mushrooms", 40));
-    ingredients.push_back(make_unique<Ingredient>(IngredientType::OLIVES, "Olives", 30));
-    ingredients.push_back(make_unique<Ingredient>(IngredientType::BELL_PEPPERS, "Bell Peppers", 35));
+    ingredients.push_back(make_unique<Ingredient>(IngredientType::DOUGH, "Dough", 5));
+    ingredients.push_back(make_unique<Ingredient>(IngredientType::CHEESE, "Cheese", 10));
+    ingredients.push_back(make_unique<Ingredient>(IngredientType::TOMATO_SAUCE, "Tomato Sauce", 8));
+    ingredients.push_back(make_unique<Ingredient>(IngredientType::PEPPERONI, "Pepperoni", 6));
+    ingredients.push_back(make_unique<Ingredient>(IngredientType::MUSHROOMS, "Mushrooms", 4));
+    ingredients.push_back(make_unique<Ingredient>(IngredientType::OLIVES, "Olives", 3));
+    ingredients.push_back(make_unique<Ingredient>(IngredientType::BELL_PEPPERS, "Bell Peppers", 3));
     
-    // Create chefs
-    vector<string> chef_names = {"Mario", "Luigi", "Giuseppe", "Antonio", "Francesco", "Giovanni"};
-    for (int i = 0; i < num_chefs; ++i) {
-        string chef_name = (i < chef_names.size()) ? chef_names[i] : "Chef" + to_string(i + 1);
-        chefs.push_back(make_unique<Chef>(i + 1, chef_name));
-    }
-    
-    // Create customers
-    vector<string> customer_names = {"Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace", "Henry", "Ivy", "Jack"};
-    for (int i = 0; i < num_customers; ++i) {
-        string customer_name = (i < customer_names.size()) ? customer_names[i] : "Customer" + to_string(i + 1);
-        customers.push_back(make_unique<Customer>(i + 1, customer_name));
-    }
+
+// Create chefs
+vector<string> chef_names = {"Mario", "Luigi", "Giuseppe", "Antonio", "Francesco", "Giovanni"};
+for (int i = 0; i < num_chefs; ++i) {
+    string chef_name = (static_cast<size_t>(i) < chef_names.size()) ? chef_names[i] : "Chef" + to_string(i + 1);
+    chefs.push_back(make_unique<Chef>(i + 1, chef_name));
+}
+
+// Create customers
+vector<string> customer_names = {"Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace", "Henry", "Ivy", "Jack"};
+for (int i = 0; i < num_customers; ++i) {
+    string customer_name = (static_cast<size_t>(i) < customer_names.size()) ? customer_names[i] : "Customer" + to_string(i + 1);
+    customers.push_back(make_unique<Customer>(i + 1, customer_name));
+}
 }
 
 Pizzeria::~Pizzeria() {
@@ -249,6 +250,7 @@ Pizzeria::~Pizzeria() {
 }
 
 void Pizzeria::addOrder(shared_ptr<Order> order) {
+    // order_queue is buffer queue b/w customer placing order and chef processing it
     lock_guard<mutex> lock(order_queue_mutex);
     order_queue.push(order);
     total_orders_placed++;
@@ -256,7 +258,8 @@ void Pizzeria::addOrder(shared_ptr<Order> order) {
 }
 
 shared_ptr<Order> Pizzeria::getNextOrder() {
-    unique_lock<mutex> lock(order_queue_mutex);
+    unique_lock<mutex> lock(order_queue_mutex);// this ensures only one thread accesses the queue at a time
+    // Wait for an order to be available or pizzeria to close
     order_available.wait(lock, [this] { return !order_queue.empty() || !is_open; });
     
     if (!order_queue.empty()) {
@@ -268,10 +271,10 @@ shared_ptr<Order> Pizzeria::getNextOrder() {
 }
 
 void Pizzeria::addReadyOrder(shared_ptr<Order> order) {
-    lock_guard<mutex> lock(ready_orders_mutex);
+    lock_guard<mutex> lock(ready_orders_mutex);// releases the mutex when it goes out of scope
     ready_orders.push(order);
     total_orders_completed++;
-    ready_order_available.notify_one();
+    ready_order_available.notify_one();// notify waiting threads that a new order is ready
 }
 
 shared_ptr<Order> Pizzeria::getReadyOrder() {
@@ -310,7 +313,7 @@ bool Pizzeria::checkAndConsumeIngredients(PizzaType pizza_type) {
             });
         
         if (it != ingredients.end()) {
-            (*it)->consume(1);
+            (*it)->consume(1);// decrease by 1 unit
         }
     }
     
@@ -354,8 +357,44 @@ void Pizzeria::startOperations() {
     accepting_orders = false;
     printOrderStatus("⚠️  Pizzeria is now closed for new orders. Finishing existing orders...");
     
-    // Wait for all orders to be processed
-    this_thread::sleep_for(chrono::seconds(15));
+    // Wait longer and check for remaining orders
+    int wait_cycles = 0;
+    const int max_wait_cycles = 90; // 30 seconds max additional wait
+    
+    while (wait_cycles < max_wait_cycles) {
+        this_thread::sleep_for(chrono::seconds(1));
+        wait_cycles++;
+        
+        // Check if all orders are processed
+        bool orders_remaining = false;
+        {
+            lock_guard<mutex> order_lock(order_queue_mutex);
+            lock_guard<mutex> ready_lock(ready_orders_mutex);
+            orders_remaining = !order_queue.empty() || !ready_orders.empty();
+        }
+        
+        if (!orders_remaining && total_orders_placed == total_orders_delivered) {
+            printOrderStatus("✅ All orders have been completed and delivered!");
+            break;
+        }
+        
+        // Print progress every 5 seconds
+        if (wait_cycles % 5 == 0) {
+            printOrderStatus("⏳ Still processing remaining orders... " + 
+                           to_string(total_orders_delivered) + "/" + 
+                           to_string(total_orders_placed) + " delivered");
+        }
+
+        if (wait_cycles % 10 == 0) {
+            order_available.notify_all();
+            ready_order_available.notify_all();
+        }
+        
+    }
+    
+    if (wait_cycles >= max_wait_cycles) {
+        printOrderStatus("⚠️  Timeout reached. Some orders may remain unprocessed.");
+    }
     
     // Close pizzeria
     is_open = false;
@@ -369,6 +408,9 @@ void Pizzeria::startOperations() {
     
     printOrderStatus("🏁 Pizzeria has closed. Final statistics:");
     printStatistics();
+    
+    // Print detailed completion analysis
+    printCompletionAnalysis();
 }
 
 void Pizzeria::stopOperations() {
@@ -407,6 +449,44 @@ void Pizzeria::printStatistics() {
     cout << string(50, '=') << endl;
 }
 
+void Pizzeria::printCompletionAnalysis() {
+    lock_guard<mutex> lock(cout_mutex);
+    cout << "\n" << string(50, '=') << endl;
+    cout << "📋 COMPLETION ANALYSIS" << endl;
+    cout << string(50, '=') << endl;
+    
+    int unprocessed_orders = total_orders_placed - total_orders_delivered;
+    double completion_rate = (total_orders_delivered * 100.0) / total_orders_placed;
+    
+    cout << "Orders Placed: " << total_orders_placed << endl;
+    cout << "Orders Delivered: " << total_orders_delivered << endl;
+    cout << "Unprocessed Orders: " << unprocessed_orders << endl;
+    cout << "Completion Rate: " << fixed << setprecision(1) << completion_rate << "%" << endl;
+    
+    {
+        lock_guard<mutex> order_lock(order_queue_mutex);
+        lock_guard<mutex> ready_lock(ready_orders_mutex);
+        
+        if (!order_queue.empty()) {
+            cout << "⚠️  Orders still in queue: " << order_queue.size() << endl;
+        }
+        
+        if (!ready_orders.empty()) {
+            cout << "⚠️  Orders ready but not delivered: " << ready_orders.size() << endl;
+        }
+    }
+    
+    if (completion_rate == 100.0) {
+        cout << "🎉 Perfect! All orders were successfully completed!" << endl;
+    } else if (completion_rate >= 90.0) {
+        cout << "👍 Good job! Most orders were completed." << endl;
+    } else {
+        cout << "📝 Consider increasing processing time or chef count for better completion rates." << endl;
+    }
+    
+    cout << string(50, '=') << endl;
+}
+
 bool Pizzeria::isOpen() const {
     return is_open;
 }
@@ -420,7 +500,7 @@ void Pizzeria::deliveryService() {
     mt19937 gen(rd());
     uniform_int_distribution<> delivery_time(1000, 3000);  
     
-    while (is_open) {
+    while (is_open || !ready_orders.empty()) {
         auto order = getReadyOrder();
         if (!order) {
             this_thread::sleep_for(chrono::milliseconds(100));

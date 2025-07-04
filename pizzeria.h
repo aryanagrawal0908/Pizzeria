@@ -182,6 +182,9 @@ public:
     
     // Statistics thread
     void statisticsReporter();
+    
+private:
+    void printCompletionAnalysis();
 };
 
 // Global pizzeria instance
