@@ -1,6 +1,3 @@
-# Concurrent Pizzeria Simulation
-
-A comprehensive C++ simulation that demonstrates advanced concurrency concepts including multi-threading, semaphores, mutex locks, and condition variables in a real-world pizzeria scenario.
 
 ## 🎯 Project Overview
 
@@ -120,18 +117,3 @@ Net Earnings: $181.27
 ============================================================
 ```
 
-### Adding New Pizza Types
-1. Add to `PizzaType` enum in `pizzeria.h`
-2. Update pricing in `Order` constructor
-3. Define ingredients in `getRequiredIngredients()`
-4. Update string conversion functions
-
-### Common Issues
-- **Low Completion Rates**: Increase initial ingredient quantities
-- **Compilation Errors**: Ensure C++20 support and threading library
-- **Deadlocks**: Check for proper mutex usage and timeout mechanisms
-
-### Performance Tuning
-- **Increase Ingredients**: For higher completion rates
-- **Adjust Timing**: Modify cooking/delivery times for different scenarios
-- **Scale Threads**: Add more chefs for higher throughput
